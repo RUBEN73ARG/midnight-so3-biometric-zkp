@@ -93,14 +93,14 @@ function computeMoments(signal: Float32Array, w: number, h: number): number[] {
   return moments
 }
 
-/**
- * Quantizes 32 float moments → 32 stable bytes (same logic as Python's quantize_to_bytes).
- */
 function quantizeToBytes(moments: number[]): Uint8Array {
   const bytes = new Uint8Array(32)
-  const max = Math.max(...moments.map(Math.abs)) || 1
+  // Exclude the 0th order moment (average brightness / DC component) from the max scale factor
+  // to prevent it from flatlining the spatial detail moments to the neutral 128 value.
+  const spatialMoments = moments.slice(1)
+  const max = Math.max(...spatialMoments.map(Math.abs)) || 1
+  
   for (let i = 0; i < 32; i++) {
-    // Sigmoid scaling for stability, identical to Python version
     const normalized = moments[i] / max
     const sigmoid = 1 / (1 + Math.exp(-normalized * 6))
     bytes[i] = Math.round(sigmoid * 255)

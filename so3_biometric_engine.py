@@ -91,7 +91,9 @@ class SO3BiometricEngine:
 
     def quantize_to_bytes(self, moments: List[float]) -> bytes:
         """Cuantiza momentos continuos a 32 bytes estables mediante función sigmoide."""
-        max_abs = max([abs(m) for m in moments]) or 1.0
+        # Excluir el momento de orden 0 (DC) del factor de escala máximo
+        spatial_moments = moments[1:]
+        max_abs = max([abs(m) for m in spatial_moments]) or 1.0
         byte_list = []
         
         for m in moments:
