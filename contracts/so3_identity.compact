@@ -1,0 +1,31 @@
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+export ledger identities: Map<Bytes<32>, Boolean>;
+
+export circuit verify_and_register(
+    witness_s_hash: Bytes<32>, 
+    witness_entropy: Bytes<32>,
+    public_commitment: Bytes<32>
+): [] {
+    const calculated_commitment = persistentHash<Vector<2, Bytes<32>>>([witness_s_hash, witness_entropy]);
+
+    assert(calculated_commitment == public_commitment,
+        "Invariancia fallida: La huella topologica no coincide.");
+
+    assert(!identities.member(disclose(public_commitment)),
+        "Identidad ya registrada.");
+
+    identities.insert(disclose(public_commitment), true);
+}
+
+export circuit verify_topological_identity(
+    witness_s_hash: Bytes<32>, 
+    witness_entropy: Bytes<32>,
+    public_commitment: Bytes<32>
+): [] {
+    const calculated = persistentHash<Vector<2, Bytes<32>>>([witness_s_hash, witness_entropy]);
+    assert(calculated == public_commitment, "Invariancia fallida: La huella topologica no coincide.");
+    assert(identities.member(disclose(public_commitment)), "Identidad no registrada.");
+}
