@@ -13,28 +13,11 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const animRef = useRef<number>(0)
-  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [scanProgress, setScanProgress] = useState(0)
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
   const [captureCount, setCaptureCount] = useState(0)
   const [isCapturing, setIsCapturing] = useState(false)
-
-  // Enumerate available video devices
-  useEffect(() => {
-    async function loadDevices() {
-      try {
-        const allDevices = await navigator.mediaDevices.enumerateDevices()
-        const videoDevices = allDevices.filter(d => d.kind === 'videoinput')
-        setDevices(videoDevices)
-      } catch {
-        // ignore device enum errors
-      }
-    }
-    loadDevices()
-  }, [])
 
   // Animated scan lines overlay
   const drawOverlay = useCallback((t: number) => {
@@ -56,7 +39,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.fillStyle = gradient
     ctx.fillRect(0, scanY - 30, canvas.width, 60)
 
-    // Draw semi-transparent dark overlay outside the oval
+    // Draw semi-transparent dark overlay outside the oval to focus on the face
     ctx.fillStyle = 'rgba(5, 8, 16, 0.55)'
     ctx.beginPath()
     ctx.rect(0, 0, canvas.width, canvas.height)
@@ -74,7 +57,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.stroke()
     ctx.setLineDash([])
 
-    // Glowing frame effect on the oval
+    // Glowing frame effect
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)'
     ctx.lineWidth = 6
     ctx.beginPath()
@@ -92,7 +75,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.lineTo(canvas.width / 2, canvas.height / 2 + ry)
     ctx.stroke()
 
-    // Horizontal eye guide line (dashed, placed 25% above center)
+    // Horizontal eye guide line (dashed)
     const eyeY = canvas.height / 2 - ry * 0.25
     ctx.beginPath()
     ctx.moveTo(canvas.width / 2 - rx, eyeY)
@@ -100,7 +83,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.stroke()
     ctx.setLineDash([])
 
-    // Center crosshair "+" at nose position (Strong Neon Orange)
+    // Center crosshair "+" (Strong Neon Orange)
     ctx.strokeStyle = 'rgba(255, 85, 0, 0.95)'
     ctx.lineWidth = 2.5
     ctx.beginPath()
@@ -110,7 +93,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.lineTo(canvas.width / 2 + 14, canvas.height / 2)
     ctx.stroke()
 
-    // Left and Right Eye target boxes (Strong Neon Orange) - LARGER
+    // Left and Right Eye target boxes
     ctx.strokeStyle = 'rgba(255, 85, 0, 0.95)'
     ctx.lineWidth = 2
     const eyeWidth = 36
@@ -119,21 +102,12 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     ctx.strokeRect(canvas.width / 2 - eyeOffsetX - eyeWidth / 2, eyeY - eyeHeight / 2, eyeWidth, eyeHeight)
     ctx.strokeRect(canvas.width / 2 + eyeOffsetX - eyeWidth / 2, eyeY - eyeHeight / 2, eyeWidth, eyeHeight)
 
-    // Center circle of the reticle (Celeste)
+    // Center circle of the reticle
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)'
     ctx.lineWidth = 1.5
     ctx.beginPath()
     ctx.arc(canvas.width / 2, canvas.height / 2, 25, 0, Math.PI * 2)
     ctx.stroke()
-
-    // Draw helper text BELOW the oval
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 11px "Space Grotesk", sans-serif'
-    ctx.textAlign = 'center'
-    ctx.shadowColor = 'black'
-    ctx.shadowBlur = 4
-    ctx.fillText('ALINEA OJOS EN LOS CUADROS Y NARIZ AL CENTRO', canvas.width / 2, canvas.height / 2 + ry + 22)
-    ctx.shadowBlur = 0
 
     // Corner markers
     const size = 20
@@ -178,103 +152,72 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     animRef.current = requestAnimationFrame(drawOverlay)
   }, [ready, isCapturing, captureCount, multiCapture])
 
-  // Camera start with keepalive monitoring
+  // Simple Camera Start (no keepalives, no loops, no device selection to prevent locks)
   useEffect(() => {
     if (!active) return
     let isMounted = true
 
     const startCamera = async () => {
-      let attempts = 0
-      const maxAttempts = 6
+      try {
+        let constraints: MediaStreamConstraints = {
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        }
 
-      const tryGetMedia = async () => {
-        if (!isMounted) return
+        // Silently search for the physical BisonCam NB Pro hardware in the system
         try {
-          let stream: MediaStream
-          const constraints: MediaStreamConstraints = selectedDeviceId
-            ? { video: { deviceId: { exact: selectedDeviceId } } }
-            : { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } }
-
-          try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints)
-          } catch (innerErr) {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true })
-          }
-
-          // Refresh device list after permission is granted
-          try {
-            const allDevs = await navigator.mediaDevices.enumerateDevices()
-            const videoDevs = allDevs.filter(d => d.kind === 'videoinput')
-            if (isMounted) setDevices(videoDevs)
-          } catch {
-            // ignore
-          }
-
-          streamRef.current = stream
-          if (videoRef.current && isMounted) {
-            videoRef.current.srcObject = stream
-            videoRef.current.onloadedmetadata = () => {
-              if (isMounted) {
-                setReady(true)
-                setError(null)
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          const bison = devices.find(d => 
+            d.kind === 'videoinput' && 
+            d.label.toLowerCase().includes('bison')
+          )
+          if (bison && bison.deviceId) {
+            console.log("Directly targeting BisonCam NB Pro hardware ID:", bison.deviceId)
+            constraints = {
+              video: { 
+                deviceId: { exact: bison.deviceId }, 
+                width: { ideal: 640 }, 
+                height: { ideal: 480 } 
               }
             }
           }
+        } catch (e) {
+          console.warn("Could not pre-enumerate devices:", e)
+        }
 
-          // Monitor track ended events to auto-restart
-          stream.getVideoTracks().forEach(track => {
-            track.addEventListener('ended', () => {
-              console.warn('Camera track ended, attempting restart...')
-              if (isMounted) {
-                setReady(false)
-                setTimeout(() => { if (isMounted) tryGetMedia() }, 500)
-              }
-            })
-          })
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
 
-        } catch (e: unknown) {
-          if (!isMounted) return
-          const errName = e instanceof Error ? e.name : String(e)
+        if (!isMounted) {
+          stream.getTracks().forEach(t => t.stop())
+          return
+        }
 
-          if ((errName.includes('NotReadableError') || errName.includes('ReadableError')) && attempts < maxAttempts) {
-            attempts++
-            setError(`Cámara ocupada. Reintentando conexión (Intento ${attempts}/${maxAttempts})...`)
-            setTimeout(tryGetMedia, 1500)
-          } else {
-            const errMsg = e instanceof Error ? e.name + ': ' + e.message : String(e)
-            setError(`Error al iniciar la cámara (${errMsg}). Por favor, comprueba los permisos o si otra app la está usando.`)
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.onloadedmetadata = () => {
+            if (isMounted) {
+              setReady(true)
+              setError(null)
+            }
           }
         }
+      } catch (e: unknown) {
+        if (!isMounted) return
+        const errMsg = e instanceof Error ? e.message : String(e)
+        setError(`Error al iniciar la cámara: ${errMsg}. Comprueba que la cámara no esté en uso por otra app.`)
       }
-
-      await tryGetMedia()
     }
 
     startCamera()
 
-    // Keepalive: check every 3s if video is still active
-    keepaliveRef.current = setInterval(() => {
-      if (!isMounted) return
-      const video = videoRef.current
-      const stream = streamRef.current
-      if (!video || !stream) return
-      const tracks = stream.getVideoTracks()
-      if (tracks.length === 0 || tracks[0].readyState === 'ended') {
-        console.warn('Keepalive: camera track died, restarting...')
-        setReady(false)
-        setError(null)
-        startCamera()
-      }
-    }, 3000)
-
     return () => {
       isMounted = false
       cancelAnimationFrame(animRef.current)
-      if (keepaliveRef.current) clearInterval(keepaliveRef.current)
       streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
       setReady(false)
     }
-  }, [active, selectedDeviceId])
+  }, [active])
 
   useEffect(() => {
     if (ready) {
@@ -442,29 +385,8 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
                 />
               </label>
             </div>
-            <div style={{
-              borderTop: '1px solid var(--border)',
-              paddingTop: '0.75rem',
-              width: '90%',
-              marginTop: '0.25rem',
-            }}>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => {
-                  setError(null)
-                  setReady(false)
-                  streamRef.current?.getTracks().forEach(t => t.stop())
-                  streamRef.current = null
-                  // Force re-trigger useEffect by toggling selectedDeviceId
-                  setSelectedDeviceId(prev => prev === '' ? ' ' : '')
-                }}
-                style={{ width: '100%', marginBottom: '8px', cursor: 'pointer' }}
-              >
-                🔄 Reintentar Cámara
-              </button>
-            </div>
-        </div>
-      ) : (
+          </div>
+        ) : (
           <>
             <video
               ref={videoRef}
@@ -480,40 +402,6 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
                 width: '100%', height: '100%', pointerEvents: 'none',
               }}
             />
-            {/* Camera Selector Dropdown - TOP LEFT */}
-            {devices.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '6px', left: '6px', zIndex: 20
-              }}>
-                <select
-                  value={selectedDeviceId}
-                  onChange={(e) => {
-                    streamRef.current?.getTracks().forEach(t => t.stop())
-                    setReady(false)
-                    setSelectedDeviceId(e.target.value)
-                  }}
-                  style={{
-                    background: 'rgba(5, 8, 16, 0.85)',
-                    color: 'var(--accent-cyan)',
-                    border: '1px solid var(--border-glow)',
-                    borderRadius: '8px',
-                    padding: '4px 10px',
-                    fontSize: '0.7rem',
-                    fontFamily: 'var(--font-main)',
-                    cursor: 'pointer',
-                    backdropFilter: 'blur(10px)',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="">📷 Cámara ({devices.length})</option>
-                  {devices.map((d, i) => (
-                    <option key={d.deviceId || i} value={d.deviceId}>
-                      {d.label || `Cámara ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {/* Scan progress */}
             {scanProgress > 0 && scanProgress < 100 && (
