@@ -160,7 +160,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
     const startCamera = async () => {
       try {
         let constraints: MediaStreamConstraints = {
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+          video: { facingMode: 'user' }
         }
 
         // Silently search for the physical BisonCam NB Pro hardware in the system
@@ -173,11 +173,7 @@ export default function CameraView({ onCapture, active, multiCapture = 3, onMult
           if (bison && bison.deviceId) {
             console.log("Directly targeting BisonCam NB Pro hardware ID:", bison.deviceId)
             constraints = {
-              video: { 
-                deviceId: { exact: bison.deviceId }, 
-                width: { ideal: 640 }, 
-                height: { ideal: 480 } 
-              }
+              video: { deviceId: { exact: bison.deviceId } }
             }
           }
         } catch (e) {
