@@ -156,14 +156,14 @@ export default function AuthPage({ onNavigate }: AuthPageProps) {
       <div className="grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
         {/* Left */}
         <div>
-          {(step === 'capture' || step === 'processing') && (
+          <div style={{ display: (step === 'capture' || step === 'processing') ? 'block' : 'none' }}>
             <CameraView
               onCapture={handleCapture}
               active={cameraActive}
               multiCapture={3}
               onMultiCapture={handleMultiCapture}
             />
-          )}
+          </div>
 
           {step === 'confirm' && hashResult && (
             <div className="card" style={{
